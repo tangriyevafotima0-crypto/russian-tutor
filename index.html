@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>РУССКИЙ — offline tutor</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+       -webkit-font-smoothing:antialiased}
+  button{font-family:inherit;cursor:pointer}
+  input,textarea{font-family:inherit}
+  kbd{padding:1px 5px;border:1px solid currentColor;opacity:.5;
+      font-family:ui-monospace,monospace;font-size:10px;line-height:1.4}
+  ::-webkit-scrollbar{width:6px;height:6px}
+  ::-webkit-scrollbar-thumb{background:rgba(128,128,128,.35)}
+  @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════
+   MA'LUMOT BAZASI — offline va online versiya uchun umumiy.
+
+   MUHIM TUZATISH (alifbo "pand berardi"):
+   Eski kodda speak(a.n) — ya'ni harf NOMI o'qilgan: "эль", "твёрдый знак".
+   Bundan ham yomoni: bitta harf ("о", "а") berilganda TTS motori uni
+   HARF deb emas, SO'Z deb talqin qiladi va butunlay boshqa narsa o'qiydi.
+   Bir harflik matn — TTS uchun eng ishonchsiz kirish.
+
+   YECHIM: harf nomini emas, HAQIQIY SO'ZNI o'qitamiz. TTS so'zlarni
+   ishonchli o'qiydi. Har harf uchun `say` — o'sha tovush eshitiladigan
+   to'liq so'z. Harf nomi faqat MATN sifatida ko'rsatiladi, o'qilmaydi.
+   ══════════════════════════════════════════════════════════════ */
+
+const ABC = [
+  { l:"Аа", n:"а", tr:"a", say:"мама", sayTr:"máma", uz:"ona" },
+  { l:"Бб", n:"бэ", tr:"b", say:"брат", sayTr:"brat", uz:"aka / uka" },
+  { l:"Вв", n:"вэ", tr:"v", say:"вода", sayTr:"vadá", uz:"suv",
+    note:"So'z oxirida 'f' bo'lib eshitiladi: Иванов → Ivanóf" },
+  { l:"Гг", n:"гэ", tr:"g", say:"город", sayTr:"górad", uz:"shahar" },
+  { l:"Дд", n:"дэ", tr:"d", say:"дом", sayTr:"dom", uz:"uy" },
+  { l:"Ее", n:"е", tr:"ye", say:"если", sayTr:"yésli", uz:"agar",
+    note:"So'z boshida — 'ye'. Urg'usiz bo'lsa 'i'ga yaqinlashadi." },
+  { l:"Ёё", n:"ё", tr:"yo", say:"ёлка", sayTr:"yólka", uz:"archa", hard:1,
+    note:"DOIM urg'uli. Kitoblarda ko'pincha oddiy 'е' deb chop etiladi — o'zing bilib o'qishing kerak." },
+  { l:"Жж", n:"жэ", tr:"j", say:"жена", sayTr:"jyná", uz:"xotin",
+    note:"Doim QATTIQ. O'zbekcha 'j' dan yo'g'onroq." },
+  { l:"Зз", n:"зэ", tr:"z", say:"зима", sayTr:"zimá", uz:"qish" },
+  { l:"Ии", n:"и", tr:"i", say:"имя", sayTr:"ímya", uz:"ism" },
+  { l:"Йй", n:"и краткое", tr:"y", say:"мой", sayTr:"moy", uz:"mening" },
+  { l:"Кк", n:"ка", tr:"k", say:"книга", sayTr:"kníga", uz:"kitob" },
+  { l:"Лл", n:"эль", tr:"l", say:"лето", sayTr:"léta", uz:"yoz" },
+  { l:"Мм", n:"эм", tr:"m", say:"молоко", sayTr:"malakó", uz:"sut" },
+  { l:"Нн", n:"эн", tr:"n", say:"ночь", sayTr:"noch", uz:"tun" },
+  { l:"Оо", n:"о", tr:"o / a", say:"окно", sayTr:"aknó", uz:"deraza", hard:1,
+    note:"ENG MUHIM QOIDA. Urg'usiz 'о' → 'a' o'qiladi. Yozilishi ≠ o'qilishi. Diqqat qil: окно 'aknó' bo'ladi, 'oknó' emas." },
+  { l:"Пп", n:"пэ", tr:"p", say:"папа", sayTr:"pápa", uz:"ota" },
+  { l:"Рр", n:"эр", tr:"r", say:"рука", sayTr:"ruká", uz:"qo'l",
+    note:"Titroq 'r' — o'zbekchadan kuchliroq. Tilni tanglayga urib chiqar." },
+  { l:"Сс", n:"эс", tr:"s", say:"стол", sayTr:"stol", uz:"stol" },
+  { l:"Тт", n:"тэ", tr:"t", say:"тут", sayTr:"tut", uz:"shu yerda" },
+  { l:"Уу", n:"у", tr:"u", say:"утро", sayTr:"útra", uz:"tong" },
+  { l:"Фф", n:"эф", tr:"f", say:"фильм", sayTr:"film", uz:"kino" },
+  { l:"Хх", n:"ха", tr:"x", say:"хлеб", sayTr:"xlep", uz:"non",
+    note:"O'zbekcha 'x' bilan bir xil. Oxirgi 'б' → 'p' bo'lganiga e'tibor ber." },
+  { l:"Цц", n:"цэ", tr:"ts", say:"центр", sayTr:"tsentr", uz:"markaz", hard:1,
+    note:"O'zbek tilida YO'Q. 't' va 's' ni bitta tovushda qo'shib ayt." },
+  { l:"Чч", n:"че", tr:"ch", say:"чай", sayTr:"chay", uz:"choy",
+    note:"Doim YUMSHOQ — o'zbekcha 'ch' dan yumshoqroq." },
+  { l:"Шш", n:"ша", tr:"sh", say:"школа", sayTr:"shkóla", uz:"maktab",
+    note:"Doim QATTIQ." },
+  { l:"Щщ", n:"ща", tr:"shch", say:"борщ", sayTr:"borshch", uz:"borsh (sho'rva)", hard:1,
+    note:"Yumshoq, cho'ziq 'sh'. Tilni tanglayga yaqinlashtirib cho'z." },
+  { l:"Ъъ", n:"твёрдый знак", tr:"—", say:"объект", sayTr:"ab-yékt", uz:"obyekt", hard:1,
+    note:"Tovushi YO'Q. Undosh bilan unlini ajratadi — qo'shilib ketmaydi. Yolg'iz o'qilmaydi." },
+  { l:"Ыы", n:"ы", tr:"ı", say:"мыло", sayTr:"mýla", uz:"sovun", hard:1,
+    note:"O'ZBEK TILIDA YO'Q — eng qiyin tovush. 'i' deyishga tayyorlan, lekin tilni orqaga tort. Turkcha 'ı' ga o'xshaydi." },
+  { l:"Ьь", n:"мягкий знак", tr:"'", say:"мать", sayTr:"mat'", uz:"ona", hard:1,
+    note:"Tovushi YO'Q. Oldingi undoshni YUMSHATADI. 'мат' va 'мать' — butunlay boshqa so'z. Yolg'iz o'qilmaydi." },
+  { l:"Ээ", n:"э", tr:"e", say:"это", sayTr:"éta", uz:"bu" },
+  { l:"Юю", n:"ю", tr:"yu", say:"юг", sayTr:"yuk", uz:"janub" },
+  { l:"Яя", n:"я", tr:"ya", say:"яблоко", sayTr:"yábloka", uz:"olma" },
+];
+
+/* MINIMAL JUFTLIKLAR — bitta tovush ma'noni o'zgartiradi.
+   Quloqni o'rgatish uchun eng samarali mashq. */
+const PAIRS = [
+  { a:"мат", aTr:"mat", aUz:"so'kish", b:"мать", bTr:"mat'", bUz:"ona", why:"ь yumshatadi" },
+  { a:"был", aTr:"bıl", aUz:"edi (u)", b:"бил", bTr:"bil", bUz:"urdi", why:"ы ≠ и — eng qiyin farq" },
+  { a:"мышка", aTr:"mýshka", aUz:"sichqoncha", b:"мишка", bTr:"míshka", bUz:"ayiqcha", why:"ы ≠ и" },
+  { a:"суда", aTr:"sudá", aUz:"kemalar", b:"сюда", bTr:"syudá", bUz:"bu yerga", why:"у ≠ ю (yumshoq)" },
+  { a:"нос", aTr:"nos", aUz:"burun", b:"нёс", bTr:"nyos", bUz:"olib bordi", why:"о ≠ ё" },
+  { a:"угол", aTr:"úgal", aUz:"burchak", b:"уголь", bTr:"úgal'", bUz:"ko'mir", why:"ь yumshatadi" },
+  { a:"кров", aTr:"krof", aUz:"boshpana", b:"кровь", bTr:"krof'", bUz:"qon", why:"ь yumshatadi" },
+  { a:"жар", aTr:"jar", aUz:"issiq", b:"шар", bTr:"shar", bUz:"shar", why:"ж jarangli, ш jarangsiz" },
+  { a:"цель", aTr:"tsel'", aUz:"maqsad", b:"щель", bTr:"shchel'", bUz:"tirqish", why:"ц ≠ щ" },
+  { a:"полка", aTr:"pólka", aUz:"javon", b:"полька", bTr:"pól'ka", bUz:"polka (raqs)", why:"ь yumshatadi" },
+];
+
+/* AKANNYE MASHQI — urg'usiz о → а. O'zbek uchun eng katta tuzoq. */
+const AKANYE = [
+  { w:"молоко", read:"malakó", uz:"sut", note:"ikki о ham 'a' — faqat oxirgisi urg'uli" },
+  { w:"хорошо", read:"xarashó", uz:"yaxshi", note:"ikki о → 'a'" },
+  { w:"окно", read:"aknó", uz:"deraza", note:"birinchi о → 'a'" },
+  { w:"вода", read:"vadá", uz:"suv", note:"о → 'a'" },
+  { w:"город", read:"górad", uz:"shahar", note:"1-si urg'uli qoladi, 2-si → 'a'" },
+  { w:"работа", read:"rabóta", uz:"ish", note:"1-о → 'a', 2-si urg'uli" },
+  { w:"собака", read:"sabáka", uz:"it", note:"о → 'a'" },
+  { w:"дорого", read:"dóraga", uz:"qimmat", note:"urg'usiz ikkalasi → 'a'" },
+  { w:"голова", read:"galavá", uz:"bosh", note:"ikki о → 'a'" },
+  { w:"хорошая", read:"xaróshaya", uz:"yaxshi (f)", note:"1-о → 'a'" },
+  { w:"она", read:"aná", uz:"u (ayol)", note:"о → 'a'" },
+  { w:"конечно", read:"kanéshna", uz:"albatta", note:"о → 'a' VA чн → 'shn'" },
+];
+
+const DECKS = {
+  "Salomlashuv": [
+    { ru:"Здравствуйте", tr:"zdrástvuyte", uz:"Assalomu alaykum (rasmiy)" },
+    { ru:"Привет", tr:"privét", uz:"Salom (do'stona)" },
+    { ru:"Как дела?", tr:"kak dilá?", uz:"Ishlar qalay?" },
+    { ru:"Хорошо, спасибо", tr:"xarashó, spasíba", uz:"Yaxshi, rahmat" },
+    { ru:"Меня зовут…", tr:"minyá zavút…", uz:"Mening ismim…" },
+    { ru:"Очень приятно", tr:"óchin priyátna", uz:"Juda yoqimli (tanishganda)" },
+    { ru:"До свидания", tr:"da svidániya", uz:"Xayr" },
+    { ru:"Пока", tr:"paká", uz:"Ko'rishguncha (do'stona)" },
+    { ru:"Извините", tr:"izviníte", uz:"Kechirasiz" },
+    { ru:"Пожалуйста", tr:"pajálusta", uz:"Marhamat / iltimos" },
+  ],
+  "Kundalik gap": [
+    { ru:"Я не понимаю", tr:"ya ni panimáyu", uz:"Men tushunmayapman" },
+    { ru:"Говорите медленнее", tr:"gavaríte médlenneye", uz:"Sekinroq gapiring" },
+    { ru:"Сколько это стоит?", tr:"skólka éta stóit?", uz:"Bu qancha turadi?" },
+    { ru:"Где находится…?", tr:"gde naxóditsa…?", uz:"… qayerda joylashgan?" },
+    { ru:"Мне нужно…", tr:"mne núzhna…", uz:"Menga … kerak" },
+    { ru:"Я хочу…", tr:"ya xachú…", uz:"Men … xohlayman" },
+    { ru:"Можно?", tr:"mózhna?", uz:"Mumkinmi?" },
+    { ru:"Конечно", tr:"kanéshna", uz:"Albatta", note:"чн → 'shn'. Yozilishiga aldanma." },
+    { ru:"Ничего страшного", tr:"nichivó stráshnava", uz:"Hech qisi yo'q", note:"-его → 'ivo'" },
+    { ru:"Что это значит?", tr:"shto éta znáchit?", uz:"Bu nima degani?", note:"что → 'shto'" },
+  ],
+  "O'qish: bog'lovchi": [
+    { ru:"потому что", tr:"patamú shta", uz:"chunki" },
+    { ru:"поэтому", tr:"paétamu", uz:"shuning uchun" },
+    { ru:"однако", tr:"adnáka", uz:"biroq" },
+    { ru:"например", tr:"naprimér", uz:"masalan" },
+    { ru:"кроме того", tr:"króme tavó", uz:"bundan tashqari" },
+    { ru:"в то время как", tr:"f to vrémya kak", uz:"…bo'lgan bir paytda" },
+    { ru:"таким образом", tr:"takím óbrazam", uz:"shu tariqa" },
+    { ru:"несмотря на", tr:"nismatryá na", uz:"…ga qaramay" },
+    { ru:"то есть", tr:"to yest", uz:"ya'ni" },
+    { ru:"во-первых", tr:"va-pérvıx", uz:"birinchidan" },
+  ],
+  "O'qish: kitob": [
+    { ru:"глава", tr:"glavá", uz:"bob" },
+    { ru:"страница", tr:"straníitsa", uz:"sahifa" },
+    { ru:"автор", tr:"áftar", uz:"muallif" },
+    { ru:"герой", tr:"giróy", uz:"qahramon" },
+    { ru:"смысл", tr:"smısl", uz:"ma'no" },
+    { ru:"предложение", tr:"pridlajéniye", uz:"gap / jumla" },
+    { ru:"значение", tr:"znachéniye", uz:"ahamiyat" },
+    { ru:"вывод", tr:"vívad", uz:"xulosa" },
+    { ru:"исследование", tr:"islédavaniye", uz:"tadqiqot" },
+    { ru:"мнение", tr:"mnéniye", uz:"fikr" },
+  ],
+  "Sonlar": [
+    { ru:"один", tr:"adín", uz:"bir" },
+    { ru:"два", tr:"dva", uz:"ikki" },
+    { ru:"три", tr:"tri", uz:"uch" },
+    { ru:"четыре", tr:"chitýre", uz:"to'rt" },
+    { ru:"пять", tr:"pyat'", uz:"besh" },
+    { ru:"шесть", tr:"shest'", uz:"olti" },
+    { ru:"семь", tr:"sem'", uz:"yetti" },
+    { ru:"восемь", tr:"vósim'", uz:"sakkiz" },
+    { ru:"девять", tr:"dévit'", uz:"to'qqiz" },
+    { ru:"десять", tr:"désit'", uz:"o'n" },
+  ],
+  "Fe'llar": [
+    { ru:"быть", tr:"bıt'", uz:"bo'lmoq", note:"hozirgi zamonda TUSHIB QOLADI: «Я студент» — 'men talabaman'" },
+    { ru:"знать", tr:"znat'", uz:"bilmoq" },
+    { ru:"думать", tr:"dúmat'", uz:"o'ylamoq" },
+    { ru:"говорить", tr:"gavarít'", uz:"gapirmoq" },
+    { ru:"читать", tr:"chitát'", uz:"o'qimoq" },
+    { ru:"писать", tr:"pisát'", uz:"yozmoq" },
+    { ru:"понимать", tr:"panimát'", uz:"tushunmoq" },
+    { ru:"хотеть", tr:"xatét'", uz:"xohlamoq" },
+    { ru:"работать", tr:"rabótat'", uz:"ishlamoq" },
+    { ru:"жить", tr:"jit'", uz:"yashamoq" },
+  ],
+};
+
+/* OFFLINE SUHBAT — API yo'q, shuning uchun tayyor stsenariylar.
+   Har savolga bir nechta to'g'ri javob varianti. */
+const OFFLINE_TALK = {
+  "Tanishuv": [
+    { q:"Как тебя зовут?", qTr:"kak tibyá zavút?", qUz:"Isming nima?",
+      a:"Меня зовут Кимдир.", aTr:"minyá zavút Kimdir.", aUz:"Mening ismim Kimdir." },
+    { q:"Сколько тебе лет?", qTr:"skól'ka tibé let?", qUz:"Necha yoshdasan?",
+      a:"Мне шестнадцать лет.", aTr:"mne shesnátsat' let.", aUz:"Men o'n olti yoshdaman." },
+    { q:"Откуда ты?", qTr:"atkúda tı?", qUz:"Qayerdansan?",
+      a:"Я из Узбекистана.", aTr:"ya iz Uzbekistána.", aUz:"Men O'zbekistondanman." },
+    { q:"Ты студент?", qTr:"tı studént?", qUz:"Talabamisan?",
+      a:"Да, я школьник.", aTr:"da, ya shkól'nik.", aUz:"Ha, men o'quvchiman." },
+    { q:"Очень приятно!", qTr:"óchin priyátna!", qUz:"Juda yoqimli!",
+      a:"Мне тоже очень приятно.", aTr:"mne tóje óchin priyátna.", aUz:"Menga ham juda yoqimli." },
+  ],
+  "Kafede": [
+    { q:"Что вы хотите?", qTr:"shto vı xatíte?", qUz:"Nima xohlaysiz?",
+      a:"Я хочу чай, пожалуйста.", aTr:"ya xachú chay, pajálusta.", aUz:"Choy xohlayman, iltimos." },
+    { q:"Чай или кофе?", qTr:"chay íli kófe?", qUz:"Choy yoki qahva?",
+      a:"Чай, пожалуйста.", aTr:"chay, pajálusta.", aUz:"Choy, iltimos." },
+    { q:"Что-нибудь ещё?", qTr:"shto-nibút' yishchó?", qUz:"Yana biror narsa?",
+      a:"Нет, спасибо. Это всё.", aTr:"net, spasíba. éta fsyo.", aUz:"Yo'q, rahmat. Hammasi shu." },
+    { q:"Сколько это стоит?", qTr:"skól'ka éta stóit?", qUz:"Bu qancha turadi?",
+      a:"Двести сум.", aTr:"dvésti sum.", aUz:"Ikki yuz so'm." },
+  ],
+  "Do'konda": [
+    { q:"Вам помочь?", qTr:"vam pamóch'?", qUz:"Yordam kerakmi?",
+      a:"Да, мне нужна книга.", aTr:"da, mne nuzhná kníga.", aUz:"Ha, menga kitob kerak." },
+    { q:"Какую книгу?", qTr:"kakúyu knígu?", qUz:"Qanaqa kitob?",
+      a:"Русскую книгу для начинающих.", aTr:"rússkuyu knígu dlya nachináyushchix.", aUz:"Boshlovchilar uchun rus kitobi." },
+    { q:"Вот, пожалуйста.", qTr:"vot, pajálusta.", qUz:"Mana, marhamat.",
+      a:"Спасибо большое!", aTr:"spasíba bal'shóye!", aUz:"Katta rahmat!" },
+  ],
+  "Kitob haqida": [
+    { q:"Что ты читаешь?", qTr:"shto tı chitáish?", qUz:"Nima o'qiyapsan?",
+      a:"Я читаю русскую книгу.", aTr:"ya chitáyu rússkuyu knígu.", aUz:"Rus kitobini o'qiyapman." },
+    { q:"Тебе нравится?", qTr:"tibé nrávitsa?", qUz:"Yoqyaptimi?",
+      a:"Да, очень интересно.", aTr:"da, óchin intirésna.", aUz:"Ha, juda qiziq." },
+    { q:"О чём эта книга?", qTr:"a chyom éta kníga?", qUz:"Bu kitob nima haqida?",
+      a:"Это книга о жизни.", aTr:"éta kníga a jízni.", aUz:"Bu hayot haqidagi kitob." },
+    { q:"Трудно читать?", qTr:"trúdna chitát'?", qUz:"O'qish qiyinmi?",
+      a:"Немного трудно, но интересно.", aTr:"nimnóga trúdna, no intirésna.", aUz:"Biroz qiyin, lekin qiziq." },
+  ],
+};
+
+/* GRAMMATIKA — offline ma'lumotnoma */
+const GRAMMAR = [
+  { t:"Rod — jins (o'zbekchada YO'Q)",
+    b:["Har bir ot uch jinsdan birida: мужской (m) / женский (f) / средний (n).",
+       "Undosh bilan tugasa → (m): стол, дом, брат.",
+       "-а / -я bilan tugasa → (f): книга, мама, семья.",
+       "-о / -е bilan tugasa → (n): окно, море, письмо.",
+       "Sifat otga MOSLASHADI: новый стол (m) · новая книга (f) · новое окно (n).",
+       "Har yangi so'zni jinsi bilan yodla. Keyin tuzatib bo'lmaydi."] },
+  { t:"«Bo'lmoq» hozirgi zamonda TUSHIB QOLADI",
+    b:["Rus tilida hozirgi zamonda «быть» ishlatilmaydi.",
+       "«Я студент» = 'Men talabaman'. «Есть» yozilmaydi.",
+       "«Он дома» = 'U uyda'.",
+       "O'zbekchadagi '-man/-san' qo'shimchasi ham yo'q — shunchaki olmosh + ot."] },
+  { t:"Kelishiklar — o'zbekchaga taqqoslab",
+    b:["Именительный (kim? nima?) ≈ bosh kelishik: Это книга.",
+       "Родительный (kimning?) ≈ qaratqich -ning: нет книги.",
+       "Дательный (kimga?) ≈ jo'nalish -ga: дать книгу другу.",
+       "Винительный (kimni? nimani?) ≈ tushum -ni: читаю книгу.",
+       "Творительный (kim bilan?) ≈ '…bilan': с другом.",
+       "Предложный (kimda? qayerda?) ≈ o'rin-payt -da: в книге.",
+       "O'zbekchada 6 kelishik — rus tilida ham 6. Lekin rus tilida jins ham ta'sir qiladi."] },
+  { t:"Urg'u — yozilmaydi, lekin ma'noni o'zgartiradi",
+    b:["Kitoblarda urg'u belgisi QO'YILMAYDI. O'zing bilishing kerak.",
+       "замо́к (qulf) ≠ за́мок (qal'a) — faqat urg'u farqi.",
+       "Urg'u ko'chib yuradi: рука́ → ру́ки.",
+       "Yangi so'zni DOIM urg'usi bilan yodla, aks holda tushunmaydilar."] },
+  { t:"O'qish qoidalari — yozilishi ≠ o'qilishi",
+    b:["Urg'usiz о → 'a': молоко = malakó.",
+       "что → 'shto'. конечно → 'kanéshna'.",
+       "-его / -ого → 'ivo' / 'ovo': его = yivó, нового = nóvava.",
+       "So'z oxirida jarangli undosh jarangsizlanadi: хлеб → 'xlep', друг → 'druk'.",
+       "-ться / -тся → 'tsa': учиться = uchítsa."] },
+];
+
+
+/* ══════════════════════════════════════════════════════════════
+   OFFLINE APP — sof JavaScript. React yo'q, CDN yo'q, build yo'q.
+   file:// dan ochiladi, internetsiz to'liq ishlaydi.
+   ══════════════════════════════════════════════════════════════ */
+(function () {
+"use strict";
+
+/* ── TEMA ────────────────────────────────────────────────────── */
+var THEME = {
+  light: { bg:"#F2EFE9", ink:"#16110F", red:"#C1272D", inv:"#F2EFE9",
+           dim:"rgba(22,17,15,.55)", faint:"rgba(22,17,15,.35)",
+           line:"rgba(22,17,15,.18)", hair:"rgba(22,17,15,.10)",
+           tint:"rgba(193,39,45,.09)", soft:"rgba(22,17,15,.045)", ok:"#2E7D5B" },
+  dark:  { bg:"#14100E", ink:"#EDE8DF", red:"#E04B4B", inv:"#14100E",
+           dim:"rgba(237,232,223,.55)", faint:"rgba(237,232,223,.35)",
+           line:"rgba(237,232,223,.20)", hair:"rgba(237,232,223,.11)",
+           tint:"rgba(224,75,75,.13)", soft:"rgba(237,232,223,.055)", ok:"#4FBF8B" }
+};
+
+/* ── HOLAT ───────────────────────────────────────────────────── */
+var S = {
+  dark: false,
+  tab: "abc",
+  offline: !navigator.onLine,   // boshlanishida haqiqiy holat
+  voices: [],
+  voice: null,
+  score: 0,
+  known: {},
+  // alifbo
+  abcOnly: false, abcI: 0,
+  // deck
+  deck: "Salomlashuv", cardI: 0, flip: false,
+  // mashq
+  drill: "akanye", drillI: 0, drillShow: false,
+  // suhbat
+  talk: "Tanishuv", talkI: 0, talkShow: false
+};
+
+/* ── SAQLASH (faqat lokal fayl — artifact emas) ──────────────── */
+var KEY = "ru_tutor_v1";
+function save() {
+  try {
+    localStorage.setItem(KEY, JSON.stringify({
+      dark: S.dark, offline: S.offline, score: S.score,
+      known: S.known, voice: S.voice ? S.voice.name : null
+    }));
+  } catch (e) {}
+}
+function load() {
+  try {
+    var d = JSON.parse(localStorage.getItem(KEY) || "{}");
+    if (d.dark != null) S.dark = d.dark;
+    if (d.offline != null) S.offline = d.offline;
+    if (d.score) S.score = d.score;
+    if (d.known) S.known = d.known;
+    return d.voice || null;
+  } catch (e) { return null; }
+}
+
+/* ── OVOZ ────────────────────────────────────────────────────── */
+var RU = "ru-RU";
+var ACTIVE = null;
+var norm = function (s) { return (s || "").replace("_", "-").toLowerCase(); };
+var isRu = function (v) { return norm(v.lang).indexOf("ru") === 0; };
+
+function score(v, off) {
+  var n = (v.name || "").toLowerCase(), s = 0;
+  if (off) { if (v.localService) s += 100; else s -= 500; }
+  else { if (!v.localService) s += 45; }
+  if (n.indexOf("natural") >= 0 || n.indexOf("neural") >= 0) s += 40;
+  if (n.indexOf("google") >= 0) s += 30;
+  if (n.indexOf("microsoft") >= 0) s += 28;
+  if (/svetlana|milena|dariya|yuri|pavel|dmitr|irina|katya/.test(n)) s += 12;
+  if (n.indexOf("compact") >= 0) s -= 25;
+  if (n.indexOf("espeak") >= 0) s -= 60;
+  return s;
+}
+
+/* ILDIZ SABAB: .voice berilmasa brauzer O'ZI default tanlaydi —
+   amalda ingliz motori kirillni fonetik o'qiydi. Shuning uchun .voice SHART. */
+function speak(text, rate) {
+  var sy = window.speechSynthesis;
+  if (!sy || !text) return;
+  sy.cancel();
+  var u = new SpeechSynthesisUtterance(String(text));
+  u.lang = RU;
+  if (ACTIVE) u.voice = ACTIVE;      // ◄── ASOSIY TUZATISH
+  u.rate = rate || 0.9;
+  sy.speak(u);
+}
+
+function usable() {
+  return S.voices.filter(function (v) { return S.offline ? v.localService : true; });
+}
+
+function autoPick() {
+  var list = usable();
+  if (!list.length) { ACTIVE = null; S.voice = null; return; }
+  var wanted = savedVoiceName;
+  var found = wanted && list.filter(function (v) { return v.name === wanted; })[0];
+  var best = found || list.slice().sort(function (a, b) {
+    return score(b, S.offline) - score(a, S.offline);
+  })[0];
+  S.voice = best; ACTIVE = best;
+}
+
+var savedVoiceName = null;
+
+function initVoices() {
+  var sy = window.speechSynthesis;
+  if (!sy) { render(); return; }
+  var scan = function () {
+    var ru = sy.getVoices().filter(isRu);
+    if (!ru.length) return false;
+    S.voices = ru; autoPick(); render();
+    return true;
+  };
+  if (scan()) return;
+  sy.onvoiceschanged = scan;
+  setTimeout(function () {
+    if (!S.voices.length) { S.voices = sy.getVoices().filter(isRu); autoPick(); render(); }
+  }, 1800);
+}
+
+var TEST_LINE = "Здравствуйте! Я говорю по-русски. Хорошо, что вы слышите.";
+
+/* ── YORDAMCHI ───────────────────────────────────────────────── */
+var T = function () { return S.dark ? THEME.dark : THEME.light; };
+var el = function (tag, attr, kids) {
+  var e = document.createElement(tag), k;
+  for (k in (attr || {})) {
+    if (k === "style") { for (var p in attr.style) e.style[p] = attr.style[p]; }
+    else if (k.indexOf("on") === 0) e.addEventListener(k.slice(2).toLowerCase(), attr[k]);
+    else if (k === "html") e.innerHTML = attr[k];
+    else if (k === "text") e.textContent = attr[k];
+    else e.setAttribute(k, attr[k]);
+  }
+  (kids || []).forEach(function (c) { if (c) e.appendChild(c); });
+  return e;
+};
+var mono = "ui-monospace,SFMono-Regular,Menlo,monospace";
+var serif = "Georgia,'Times New Roman',serif";
+
+function addScore(n) {
+  S.score += n; save();
+  var b = document.getElementById("score");
+  if (b) b.textContent = pad(S.score, 3);
+}
+var pad = function (n, w) { var s = String(n); while (s.length < w) s = "0" + s; return s; };
+
+/* Ovoz tugmasi */
+function snd(text, slow, big) {
+  var t = T(), sz = big ? 38 : 26;
+  var b = el("button", {
+    title: slow ? "Sekin" : "Eshitish",
+    style: { width: sz + "px", height: sz + "px", border: "1px solid " + t.line,
+             background: "transparent", color: t.dim, fontFamily: mono,
+             fontSize: (big ? 12 : 10) + "px", display: "grid", placeItems: "center",
+             flexShrink: "0", transition: "all .12s" },
+    onclick: function (e) { e.stopPropagation(); speak(text, slow ? 0.55 : 0.9); },
+    text: slow ? "½×" : "▶"
+  });
+  b.onmouseenter = function () { b.style.background = t.red; b.style.color = t.inv; b.style.borderColor = t.red; };
+  b.onmouseleave = function () { b.style.background = "transparent"; b.style.color = t.dim; b.style.borderColor = t.line; };
+  return b;
+}
+
+/* Tag tugma */
+function tag(label, on, fn) {
+  var t = T();
+  var b = el("button", {
+    style: { padding: "6px 12px", fontSize: "11px", letterSpacing: ".08em",
+             textTransform: "uppercase", transition: "all .12s",
+             border: "1px solid " + (on ? t.red : t.line),
+             background: on ? t.red : "transparent",
+             color: on ? t.inv : t.dim },
+    onclick: fn, text: label
+  });
+  if (!on) {
+    b.onmouseenter = function () { b.style.borderColor = t.red; b.style.color = t.red; };
+    b.onmouseleave = function () { b.style.borderColor = t.line; b.style.color = t.dim; };
+  }
+  return b;
+}
+
+/* Izoh qutisi */
+function note(label, html, accent) {
+  var t = T();
+  return el("div", { style: {
+    borderLeft: "2px solid " + (accent ? t.red : t.line),
+    background: accent ? t.tint : t.soft, padding: "8px 12px" } }, [
+    el("p", { style: { fontFamily: mono, fontSize: "9px", letterSpacing: ".18em",
+                       textTransform: "uppercase", color: accent ? t.red : t.faint,
+                       marginBottom: "4px" }, text: label }),
+    el("p", { style: { fontSize: "13px", color: t.ink, lineHeight: "1.55" }, html: html })
+  ]);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   OVOZ LABORATORIYASI — sen so'ragan qism
+   ══════════════════════════════════════════════════════════════ */
+function voiceLab() {
+  var t = T(), list = usable(), wrap = el("div", { style: { marginTop: "12px" } });
+
+  // Rus ovozi umuman yo'q
+  if (!S.voices.length) {
+    wrap.appendChild(note("Rus ovozi yo'q",
+      "<b>Tizimingizda rus TTS ovozi o'rnatilmagan.</b> Brauzer ovozlarni operatsion " +
+      "tizimdan oladi — sayt ularni yuklab bera olmaydi.<br><br>" +
+      "<b>Windows:</b> Sozlamalar → Vaqt va til → Nutq → Ovoz qo'shish → Русский<br>" +
+      "<b>macOS:</b> System Settings → Accessibility → Spoken Content → System Voice → Manage → Russian<br>" +
+      "<b>Android:</b> Sozlamalar → Til → Matnni nutqqa → Til paketini yuklash → Rus<br><br>" +
+      "Keyin brauzerni QAYTA ISHGA TUSHIR.", true));
+    return wrap;
+  }
+
+  // Offline rejimda lokal ovoz yo'q
+  if (S.offline && !list.length) {
+    wrap.appendChild(note("Offline ovoz yo'q",
+      "Rus ovozi bor, lekin hammasi <b>bulut</b> ovozi (Google/Microsoft onlayn). " +
+      "Ular internetsiz ishlamaydi. Offline eshitish uchun tizimga <b>lokal</b> rus ovozini " +
+      "o'rnat, yoki offline rejimni o'chir.", true));
+    return wrap;
+  }
+
+  var head = el("div", { style: { display: "flex", alignItems: "center",
+    justifyContent: "space-between", gap: "8px", flexWrap: "wrap" } });
+
+  head.appendChild(el("p", { style: { fontFamily: mono, fontSize: "10px",
+    letterSpacing: ".14em", textTransform: "uppercase", color: t.faint },
+    text: "Ovoz — " + list.length + " ta mavjud" }));
+
+  var btns = el("div", { style: { display: "flex", gap: "1px" } });
+  btns.appendChild(tag("▶ Sinab ko'r", false, function () { speak(TEST_LINE, 0.85); }));
+  head.appendChild(btns);
+  wrap.appendChild(head);
+
+  // Ro'yxat — har biri bosilsa DARHOL o'sha ovoz bilan gapiradi
+  var box = el("div", { style: { marginTop: "8px", border: "1px solid " + t.hair } });
+  list.forEach(function (v, i) {
+    var on = S.voice && v.name === S.voice.name;
+    var row = el("button", {
+      style: { width: "100%", display: "flex", justifyContent: "space-between",
+               alignItems: "center", gap: "8px", padding: "9px 12px",
+               background: on ? t.tint : "transparent", border: "none",
+               borderBottom: i === list.length - 1 ? "none" : "1px solid " + t.hair,
+               textAlign: "left", fontSize: "12px",
+               color: on ? t.red : t.ink },
+      onclick: function () {
+        S.voice = v; ACTIVE = v; savedVoiceName = v.name; save();
+        speak(TEST_LINE, 0.85);
+        render();
+      }
+    });
+    row.appendChild(el("span", { style: { display: "flex", alignItems: "center", gap: "6px" } }, [
+      el("span", { text: on ? "●" : "○", style: { fontSize: "9px", color: on ? t.red : t.faint } }),
+      el("span", { text: v.name })
+    ]));
+    row.appendChild(el("span", { style: { fontFamily: mono, fontSize: "9px",
+      color: v.localService ? t.ok : t.faint, whiteSpace: "nowrap" },
+      text: v.localService ? "offline ✓" : "internet kerak" }));
+    box.appendChild(row);
+  });
+  wrap.appendChild(box);
+
+  wrap.appendChild(el("p", { style: { marginTop: "6px", fontSize: "10.5px", color: t.faint,
+    lineHeight: "1.5" },
+    html: "Ovozni bosib sinab ko'r — noto'g'ri talaffuz qilsa, boshqasini tanla. " +
+          "<b>offline ✓</b> — internetsiz ishlaydi." }));
+  return wrap;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ALIFBO
+   ══════════════════════════════════════════════════════════════ */
+function tabAbc() {
+  var t = T();
+  var list = S.abcOnly ? ABC.filter(function (a) { return a.hard; }) : ABC;
+  if (S.abcI >= list.length) S.abcI = 0;
+  var s = list[S.abcI];
+  var box = el("div", { style: { padding: "20px 0" } });
+
+  var bar = el("div", { style: { display: "flex", justifyContent: "space-between",
+    alignItems: "center", marginBottom: "14px", gap: "8px", flexWrap: "wrap" } });
+  bar.appendChild(el("p", { style: { fontSize: "11px", color: t.faint },
+    html: "<kbd>←</kbd> <kbd>→</kbd> harf · <kbd>Space</kbd> so'zni eshit" }));
+  bar.appendChild(tag("Faqat qiyinlari (" + ABC.filter(function (a) { return a.hard; }).length + ")",
+    S.abcOnly, function () { S.abcOnly = !S.abcOnly; S.abcI = 0; render(); }));
+  box.appendChild(bar);
+
+  var grid = el("div", { style: { display: "grid",
+    gridTemplateColumns: "repeat(auto-fill,minmax(44px,1fr))", gap: "1px",
+    background: t.hair, border: "1px solid " + t.hair } });
+  list.forEach(function (a, k) {
+    var on = k === S.abcI;
+    grid.appendChild(el("button", {
+      style: { aspectRatio: "1", display: "grid", placeItems: "center", border: "none",
+               background: on ? t.red : (a.hard ? t.tint : t.bg),
+               color: on ? t.inv : t.ink, fontFamily: serif, fontSize: "17px",
+               transition: "all .1s" },
+      onclick: function () { S.abcI = k; speak(a.say, 0.8); render(); },
+      text: a.l
+    }));
+  });
+  box.appendChild(grid);
+
+  if (s) {
+    var card = el("div", { style: { marginTop: "18px", border: "1px solid " + t.line, padding: "18px" } });
+
+    var top = el("div", { style: { display: "flex", alignItems: "center", gap: "16px" } });
+    top.appendChild(el("span", { style: { fontFamily: serif, fontSize: "44px",
+      lineHeight: "1", color: t.ink }, text: s.l }));
+    var meta = el("div", { style: { flex: "1" } });
+    meta.appendChild(el("p", { style: { fontFamily: mono, fontSize: "14px", color: t.red },
+      text: "[" + s.tr + "]" }));
+    meta.appendChild(el("p", { style: { fontSize: "11px", color: t.faint, marginTop: "2px" },
+      text: "nomi: " + s.n }));
+    top.appendChild(meta);
+    card.appendChild(top);
+
+    // MUHIM: harf nomini emas, SO'ZNI o'qitamiz.
+    var w = el("div", { style: { display: "flex", alignItems: "center", gap: "10px",
+      marginTop: "16px", paddingTop: "16px", borderTop: "1px solid " + t.hair,
+      flexWrap: "wrap" } });
+    w.appendChild(el("span", { style: { fontFamily: serif, fontSize: "22px", color: t.ink },
+      text: s.say }));
+    w.appendChild(el("span", { style: { fontFamily: mono, fontSize: "12px", color: t.red },
+      text: s.sayTr }));
+    w.appendChild(el("span", { style: { fontSize: "13px", color: t.dim }, text: "— " + s.uz }));
+    var sb = el("div", { style: { marginLeft: "auto", display: "flex", gap: "1px" } });
+    sb.appendChild(snd(s.say, false, true));
+    sb.appendChild(snd(s.say, true, true));
+    w.appendChild(sb);
+    card.appendChild(w);
+
+    card.appendChild(el("p", { style: { marginTop: "10px", fontSize: "10.5px", color: t.faint },
+      text: "Tovushni so'z ichida eshit — TTS bitta harfni ishonchli o'qiy olmaydi." }));
+
+    if (s.note) {
+      var n = el("div", { style: { marginTop: "14px" } });
+      n.appendChild(note("Diqqat", s.note, true));
+      card.appendChild(n);
+    }
+    box.appendChild(card);
+  }
+
+  var tip = el("div", { style: { marginTop: "16px" } });
+  tip.appendChild(note("O'zbek uchun asosiy tuzoq",
+    "Urg'usiz <b style='font-family:" + serif + "'>о</b> harfi <b>«a»</b> deb o'qiladi. " +
+    "<span style='font-family:" + serif + "'>молоко</span> yozilsa ham " +
+    "<span style='font-family:" + mono + ";color:" + t.red + "'>malakó</span> deb o'qiladi. " +
+    "Yozilishi va o'qilishi bir xil emas — o'zbek tilidan eng katta farq shu."));
+  box.appendChild(tip);
+  return box;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   MASHQ — akannye + minimal juftliklar (offline, API kerak emas)
+   ══════════════════════════════════════════════════════════════ */
+function tabDrill() {
+  var t = T(), box = el("div", { style: { padding: "20px 0" } });
+
+  var bar = el("div", { style: { display: "flex", gap: "1px", marginBottom: "14px", flexWrap: "wrap" } });
+  bar.appendChild(tag("Akannye (о → а)", S.drill === "akanye",
+    function () { S.drill = "akanye"; S.drillI = 0; S.drillShow = false; render(); }));
+  bar.appendChild(tag("Minimal juftlik", S.drill === "pairs",
+    function () { S.drill = "pairs"; S.drillI = 0; S.drillShow = false; render(); }));
+  box.appendChild(bar);
+
+  if (S.drill === "akanye") {
+    var d = AKANYE[S.drillI % AKANYE.length];
+    box.appendChild(note("Qanday o'qiladi?",
+      "So'zni ko'r → o'zing ayt → tekshir. Yozilishiga ALDANMA."));
+
+    var c = el("div", { style: { marginTop: "14px", border: "2px solid " + t.ink,
+      padding: "36px 24px", textAlign: "center", minHeight: "180px",
+      display: "grid", placeItems: "center" } });
+    var inner = el("div");
+    inner.appendChild(el("p", { style: { fontFamily: serif, fontSize: "40px", color: t.ink },
+      text: d.w }));
+    if (S.drillShow) {
+      inner.appendChild(el("p", { style: { fontFamily: mono, fontSize: "22px",
+        color: t.red, marginTop: "14px" }, text: d.read }));
+      inner.appendChild(el("p", { style: { fontSize: "16px", color: t.ink, marginTop: "8px" },
+        text: d.uz }));
+      inner.appendChild(el("p", { style: { fontSize: "12px", color: t.faint, marginTop: "10px" },
+        text: d.note }));
+    } else {
+      inner.appendChild(el("p", { style: { fontFamily: mono, fontSize: "10px",
+        letterSpacing: ".18em", textTransform: "uppercase", color: t.faint, marginTop: "18px" },
+        text: "Space — javobni ko'r" }));
+    }
+    c.appendChild(inner);
+    c.onclick = function () { S.drillShow = !S.drillShow; render(); };
+    box.appendChild(c);
+
+    var nav = el("div", { style: { display: "flex", justifyContent: "space-between",
+      alignItems: "center", marginTop: "12px" } });
+    nav.appendChild(el("button", { style: { background: "none", border: "none",
+      fontFamily: mono, fontSize: "11px", letterSpacing: ".12em", textTransform: "uppercase",
+      color: t.dim, padding: "4px 8px" },
+      onclick: function () { S.drillI = (S.drillI - 1 + AKANYE.length) % AKANYE.length;
+        S.drillShow = false; render(); }, text: "← Oldingi" }));
+    var mid = el("div", { style: { display: "flex", alignItems: "center", gap: "10px" } });
+    mid.appendChild(snd(d.w, false)); mid.appendChild(snd(d.w, true));
+    mid.appendChild(el("span", { style: { fontFamily: mono, fontSize: "11px", color: t.faint },
+      text: pad(S.drillI + 1, 2) + " / " + pad(AKANYE.length, 2) }));
+    nav.appendChild(mid);
+    nav.appendChild(el("button", { style: { background: "none", border: "none",
+      fontFamily: mono, fontSize: "11px", letterSpacing: ".12em", textTransform: "uppercase",
+      color: t.dim, padding: "4px 8px" },
+      onclick: function () { S.drillI = (S.drillI + 1) % AKANYE.length;
+        S.drillShow = false; addScore(1); render(); }, text: "Keyingi →" }));
+    box.appendChild(nav);
+
+  } else {
+    var p = PAIRS[S.drillI % PAIRS.length];
+    box.appendChild(note("Bitta tovush — boshqa ma'no",
+      "Ikkalasini eshit. Farqni quloq bilan tut. Rus tilida bu farq HAYOTIY."));
+
+    var g = el("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr",
+      gap: "1px", marginTop: "14px", background: t.hair, border: "1px solid " + t.hair } });
+    [["a", p.a, p.aTr, p.aUz], ["b", p.b, p.bTr, p.bUz]].forEach(function (x) {
+      var cell = el("div", { style: { background: t.bg, padding: "24px 14px",
+        textAlign: "center" } });
+      cell.appendChild(el("p", { style: { fontFamily: serif, fontSize: "28px", color: t.ink },
+        text: x[1] }));
+      cell.appendChild(el("p", { style: { fontFamily: mono, fontSize: "13px", color: t.red,
+        marginTop: "6px" }, text: x[2] }));
+      cell.appendChild(el("p", { style: { fontSize: "13px", color: t.dim, marginTop: "6px" },
+        text: x[3] }));
+      var sw = el("div", { style: { display: "flex", justifyContent: "center",
+        gap: "1px", marginTop: "12px" } });
+      sw.appendChild(snd(x[1], false)); sw.appendChild(snd(x[1], true));
+      cell.appendChild(sw);
+      g.appendChild(cell);
+    });
+    box.appendChild(g);
+
+    var wy = el("div", { style: { marginTop: "12px" } });
+    wy.appendChild(note("Farq", p.why, true));
+    box.appendChild(wy);
+
+    var nav2 = el("div", { style: { display: "flex", justifyContent: "space-between",
+      alignItems: "center", marginTop: "12px" } });
+    nav2.appendChild(el("button", { style: { background: "none", border: "none",
+      fontFamily: mono, fontSize: "11px", letterSpacing: ".12em", textTransform: "uppercase",
+      color: t.dim, padding: "4px 8px" },
+      onclick: function () { S.drillI = (S.drillI - 1 + PAIRS.length) % PAIRS.length; render(); },
+      text: "← Oldingi" }));
+    nav2.appendChild(el("span", { style: { fontFamily: mono, fontSize: "11px", color: t.faint },
+      text: pad(S.drillI + 1, 2) + " / " + pad(PAIRS.length, 2) }));
+    nav2.appendChild(el("button", { style: { background: "none", border: "none",
+      fontFamily: mono, fontSize: "11px", letterSpacing: ".12em", textTransform: "uppercase",
+      color: t.dim, padding: "4px 8px" },
+      onclick: function () { S.drillI = (S.drillI + 1) % PAIRS.length; addScore(1); render(); },
+      text: "Keyingi →" }));
+    box.appendChild(nav2);
+  }
+  return box;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SO'ZLAR
+   ══════════════════════════════════════════════════════════════ */
+function tabVocab() {
+  var t = T(), box = el("div", { style: { padding: "20px 0" } });
+  var cards = DECKS[S.deck];
+  if (S.cardI >= cards.length) S.cardI = 0;
+  var c = cards[S.cardI];
+
+  var bar = el("div", { style: { display: "flex", gap: "1px", marginBottom: "14px", flexWrap: "wrap" } });
+  Object.keys(DECKS).forEach(function (n) {
+    bar.appendChild(tag(n, S.deck === n, function () {
+      S.deck = n; S.cardI = 0; S.flip = false; render();
+    }));
+  });
+  box.appendChild(bar);
+
+  var card = el("div", { style: { minHeight: "200px", border: "2px solid " + t.ink,
+    display: "grid", placeItems: "center", padding: "34px 24px", textAlign: "center",
+    userSelect: "none" }, onclick: function () { S.flip = !S.flip; render(); } });
+  var in2 = el("div");
+  if (!S.flip) {
+    in2.appendChild(el("p", { style: { fontFamily: serif, fontSize: "34px",
+      lineHeight: "1.2", color: t.ink }, text: c.ru }));
+    in2.appendChild(el("p", { style: { fontFamily: mono, fontSize: "10px",
+      letterSpacing: ".18em", textTransform: "uppercase", color: t.faint, marginTop: "18px" },
+      text: "Space — ochish" }));
+  } else {
+    in2.appendChild(el("p", { style: { fontFamily: mono, fontSize: "17px", color: t.red },
+      text: c.tr }));
+    in2.appendChild(el("p", { style: { fontSize: "23px", color: t.ink, marginTop: "12px" },
+      text: c.uz }));
+    if (c.note) in2.appendChild(el("p", { style: { fontSize: "12px", color: t.faint,
+      marginTop: "16px" }, text: c.note }));
+  }
+  card.appendChild(in2);
+  box.appendChild(card);
+
+  var nav = el("div", { style: { display: "flex", justifyContent: "space-between",
+    alignItems: "center", marginTop: "12px" } });
+  nav.appendChild(el("button", { style: { background: "none", border: "none",
+    fontFamily: mono, fontSize: "11px", letterSpacing: ".12em", textTransform: "uppercase",
+    color: t.dim, padding: "4px 8px" },
+    onclick: function () { S.cardI = (S.cardI - 1 + cards.length) % cards.length;
+      S.flip = false; render(); }, text: "← Oldingi" }));
+
+  var mid = el("div", { style: { display: "flex", alignItems: "center", gap: "10px" } });
+  mid.appendChild(snd(c.ru, false)); mid.appendChild(snd(c.ru, true));
+  mid.appendChild(el("span", { style: { fontFamily: mono, fontSize: "11px", color: t.faint },
+    text: pad(S.cardI + 1, 2) + " / " + pad(cards.length, 2) }));
+  var kn = !!S.known[c.ru];
+  mid.appendChild(tag(kn ? "✓ Bildim" : "Bildim", kn, function () {
+    if (!S.known[c.ru]) { S.known[c.ru] = 1; addScore(1); save(); render(); }
+  }));
+  nav.appendChild(mid);
+
+  nav.appendChild(el("button", { style: { background: "none", border: "none",
+    fontFamily: mono, fontSize: "11px", letterSpacing: ".12em", textTransform: "uppercase",
+    color: t.dim, padding: "4px 8px" },
+    onclick: function () { S.cardI = (S.cardI + 1) % cards.length; S.flip = false; render(); },
+    text: "Keyingi →" }));
+  box.appendChild(nav);
+
+  var learned = cards.filter(function (x) { return S.known[x.ru]; }).length;
+  var bg = el("div", { style: { marginTop: "14px", height: "3px", background: t.hair } });
+  bg.appendChild(el("div", { style: { height: "100%", background: t.red,
+    width: (learned / cards.length * 100) + "%", transition: "width .3s" } }));
+  box.appendChild(bg);
+
+  box.appendChild(el("p", { style: { marginTop: "12px", fontSize: "10px", color: t.faint },
+    html: "<kbd>←</kbd> <kbd>→</kbd> karta · <kbd>Space</kbd> aylantir · <kbd>Enter</kbd> bildim · <kbd>A</kbd> eshit" }));
+  return box;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SUHBAT — offline stsenariy (API yo'q)
+   ══════════════════════════════════════════════════════════════ */
+function tabTalk() {
+  var t = T(), box = el("div", { style: { padding: "20px 0" } });
+  var set = OFFLINE_TALK[S.talk];
+  if (S.talkI >= set.length) S.talkI = 0;
+  var d = set[S.talkI];
+
+  var bar = el("div", { style: { display: "flex", gap: "1px", marginBottom: "14px", flexWrap: "wrap" } });
+  Object.keys(OFFLINE_TALK).forEach(function (n) {
+    bar.appendChild(tag(n, S.talk === n, function () {
+      S.talk = n; S.talkI = 0; S.talkShow = false; render();
+    }));
+  });
+  box.appendChild(bar);
+
+  box.appendChild(note("Offline suhbat",
+    "Savolni eshit → o'zing javob ber (ovoz chiqarib!) → tekshir. " +
+    "Internet bo'lsa, «Suhbat» tabida jonli Claude bilan gaplashasan."));
+
+  // Savol
+  var q = el("div", { style: { marginTop: "14px", borderLeft: "2px solid " + t.red,
+    paddingLeft: "14px" } });
+  var qh = el("div", { style: { display: "flex", alignItems: "flex-start", gap: "6px" } });
+  qh.appendChild(el("p", { style: { flex: "1", fontFamily: serif, fontSize: "22px",
+    lineHeight: "1.35", color: t.ink }, text: d.q }));
+  qh.appendChild(snd(d.q, false)); qh.appendChild(snd(d.q, true));
+  q.appendChild(qh);
+  q.appendChild(el("p", { style: { fontFamily: mono, fontSize: "12.5px", color: t.red,
+    marginTop: "6px" }, text: d.qTr }));
+  q.appendChild(el("p", { style: { fontSize: "13.5px", color: t.dim, marginTop: "6px" },
+    text: d.qUz }));
+  box.appendChild(q);
+
+  // Javob
+  if (S.talkShow) {
+    var a = el("div", { style: { marginTop: "16px", background: t.soft,
+      borderLeft: "2px solid " + t.line, padding: "12px 14px" } });
+    a.appendChild(el("p", { style: { fontFamily: mono, fontSize: "9px",
+      letterSpacing: ".18em", textTransform: "uppercase", color: t.faint,
+      marginBottom: "8px" }, text: "Mumkin javob" }));
+    var ah = el("div", { style: { display: "flex", alignItems: "flex-start", gap: "6px" } });
+    ah.appendChild(el("p", { style: { flex: "1", fontFamily: serif, fontSize: "20px",
+      color: t.ink }, text: d.a }));
+    ah.appendChild(snd(d.a, false)); ah.appendChild(snd(d.a, true));
+    a.appendChild(ah);
+    a.appendChild(el("p", { style: { fontFamily: mono, fontSize: "12px", color: t.red,
+      marginTop: "6px" }, text: d.aTr }));
+    a.appendChild(el("p", { style: { fontSize: "13px", color: t.dim, marginTop: "6px" },
+      text: d.aUz }));
+    box.appendChild(a);
+  } else {
+    var btn = el("button", { style: { width: "100%", marginTop: "16px", padding: "12px 0",
+      background: "transparent", border: "1px solid " + t.line, color: t.dim,
+      fontSize: "11px", letterSpacing: ".14em", textTransform: "uppercase" },
+      onclick: function () { S.talkShow = true; addScore(1); render(); },
+      text: "Javobni ko'rsat  ·  Space" });
+    box.appendChild(btn);
+  }
+
+  var nav = el("div", { style: { display: "flex", justifyContent: "space-between",
+    alignItems: "center", marginTop: "14px" } });
+  nav.appendChild(el("button", { style: { background: "none", border: "none",
+    fontFamily: mono, fontSize: "11px", letterSpacing: ".12em", textTransform: "uppercase",
+    color: t.dim, padding: "4px 8px" },
+    onclick: function () { S.talkI = (S.talkI - 1 + set.length) % set.length;
+      S.talkShow = false; render(); }, text: "← Oldingi" }));
+  nav.appendChild(el("span", { style: { fontFamily: mono, fontSize: "11px", color: t.faint },
+    text: pad(S.talkI + 1, 2) + " / " + pad(set.length, 2) }));
+  nav.appendChild(el("button", { style: { background: "none", border: "none",
+    fontFamily: mono, fontSize: "11px", letterSpacing: ".12em", textTransform: "uppercase",
+    color: t.dim, padding: "4px 8px" },
+    onclick: function () { S.talkI = (S.talkI + 1) % set.length;
+      S.talkShow = false; render(); }, text: "Keyingi →" }));
+  box.appendChild(nav);
+  return box;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   GRAMMATIKA
+   ══════════════════════════════════════════════════════════════ */
+function tabGram() {
+  var t = T(), box = el("div", { style: { padding: "20px 0" } });
+  GRAMMAR.forEach(function (g, i) {
+    var sec = el("div", { style: { marginBottom: i === GRAMMAR.length - 1 ? "0" : "22px" } });
+    sec.appendChild(el("h3", { style: { fontFamily: serif, fontSize: "18px", color: t.ink,
+      paddingBottom: "8px", borderBottom: "2px solid " + t.ink, marginBottom: "10px" },
+      text: g.t }));
+    g.b.forEach(function (line) {
+      var row = el("div", { style: { display: "flex", gap: "8px", padding: "5px 0" } });
+      row.appendChild(el("span", { style: { color: t.red, fontSize: "13px", flexShrink: "0" },
+        text: "—" }));
+      row.appendChild(el("span", { style: { fontSize: "13.5px", color: t.ink,
+        lineHeight: "1.6" }, text: line }));
+      sec.appendChild(row);
+    });
+    box.appendChild(sec);
+  });
+  return box;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   RENDER
+   ══════════════════════════════════════════════════════════════ */
+var TABS = [
+  { id: "abc",   label: "Alifbo",     ru: "алфавит" },
+  { id: "drill", label: "Talaffuz",   ru: "произн." },
+  { id: "voc",   label: "So'zlar",    ru: "слова" },
+  { id: "talk",  label: "Suhbat",     ru: "разговор" },
+  { id: "gram",  label: "Grammatika", ru: "грамм." }
+];
+
+function render() {
+  var t = T();
+  document.body.style.background = t.bg;
+  document.body.style.color = t.ink;
+
+  var root = document.getElementById("root");
+  root.innerHTML = "";
+
+  var page = el("div", { style: { maxWidth: "660px", margin: "0 auto", padding: "28px 20px" } });
+
+  /* SARLAVHA */
+  var head = el("header", { style: { display: "flex", alignItems: "flex-end",
+    justifyContent: "space-between", paddingBottom: "12px",
+    borderBottom: "4px solid " + t.ink, gap: "12px" } });
+
+  var ttl = el("div");
+  ttl.appendChild(el("h1", { style: { fontFamily: serif, fontWeight: "900", fontSize: "36px",
+    lineHeight: ".9", letterSpacing: "-.03em", color: t.ink },
+    html: "РУССКИЙ<span style='color:" + t.red + "'>.</span>" }));
+  ttl.appendChild(el("p", { style: { fontFamily: mono, fontSize: "9.5px",
+    letterSpacing: ".22em", textTransform: "uppercase", color: t.faint, marginTop: "7px" },
+    text: "Offline · Elementary" }));
+  head.appendChild(ttl);
+
+  var right = el("div", { style: { display: "flex", alignItems: "flex-end", gap: "14px" } });
+  var sc = el("div", { style: { textAlign: "right" } });
+  sc.appendChild(el("p", { id: "score", style: { fontFamily: mono, fontWeight: "700",
+    fontSize: "24px", lineHeight: "1", color: t.red }, text: pad(S.score, 3) }));
+  sc.appendChild(el("p", { style: { fontFamily: mono, fontSize: "9px", letterSpacing: ".18em",
+    textTransform: "uppercase", color: t.faint, marginTop: "4px" }, text: "ball" }));
+  right.appendChild(sc);
+  right.appendChild(el("button", { title: "Tun / kun (D)",
+    style: { width: "36px", height: "36px", border: "1px solid " + t.line,
+             background: "transparent", color: t.ink, display: "grid",
+             placeItems: "center", fontSize: "13px" },
+    onclick: function () { S.dark = !S.dark; save(); render(); },
+    text: S.dark ? "☀" : "☾" }));
+  head.appendChild(right);
+  page.appendChild(head);
+
+  /* OFFLINE TUGMASI */
+  var off = el("div", { style: { display: "flex", alignItems: "center",
+    justifyContent: "space-between", gap: "8px", marginTop: "12px",
+    padding: "9px 12px", border: "1px solid " + (S.offline ? t.red : t.hair),
+    background: S.offline ? t.tint : "transparent", flexWrap: "wrap" } });
+  var ol = el("div");
+  ol.appendChild(el("p", { style: { fontFamily: mono, fontSize: "10px",
+    letterSpacing: ".14em", textTransform: "uppercase",
+    color: S.offline ? t.red : t.faint },
+    text: S.offline ? "◉ Offline rejim yoniq" : "○ Offline rejim o'chiq" }));
+  ol.appendChild(el("p", { style: { fontSize: "11px", color: t.faint, marginTop: "3px" },
+    text: S.offline
+      ? "Faqat qurilmadagi ovozlar. Internet kerak emas."
+      : "Bulut ovozlari ham ko'rinadi (tabiiyroq, lekin internet kerak)." }));
+  off.appendChild(ol);
+  off.appendChild(tag(S.offline ? "O'chir" : "Yoq", S.offline, function () {
+    S.offline = !S.offline; autoPick(); save(); render();
+  }));
+  page.appendChild(off);
+
+  /* OVOZ LAB */
+  page.appendChild(voiceLab());
+
+  /* TABLAR */
+  var nav = el("nav", { style: { display: "flex", gap: "1px", marginTop: "16px" } });
+  TABS.forEach(function (x, k) {
+    var on = S.tab === x.id;
+    var b = el("button", {
+      style: { flex: "1", padding: "10px 2px", transition: "all .12s",
+               border: "1px solid " + (on ? t.ink : t.line),
+               background: on ? t.ink : "transparent",
+               color: on ? t.inv : t.dim },
+      onclick: function () { S.tab = x.id; render(); }
+    });
+    b.appendChild(el("span", { style: { display: "block", fontSize: "12px",
+      fontWeight: "500", lineHeight: "1" }, text: x.label }));
+    b.appendChild(el("span", { style: { display: "block", fontFamily: mono,
+      fontSize: "8px", letterSpacing: ".12em", textTransform: "uppercase",
+      opacity: ".55", marginTop: "4px" }, text: (k + 1) + " · " + x.ru }));
+    nav.appendChild(b);
+  });
+  page.appendChild(nav);
+
+  /* KONTENT */
+  var main = el("main");
+  if (S.tab === "abc") main.appendChild(tabAbc());
+  else if (S.tab === "drill") main.appendChild(tabDrill());
+  else if (S.tab === "voc") main.appendChild(tabVocab());
+  else if (S.tab === "talk") main.appendChild(tabTalk());
+  else if (S.tab === "gram") main.appendChild(tabGram());
+  page.appendChild(main);
+
+  /* FOOTER */
+  var f = el("footer", { style: { marginTop: "24px", paddingTop: "12px",
+    borderTop: "1px solid " + t.hair, display: "flex",
+    justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap" } });
+  f.appendChild(el("p", { style: { fontSize: "10px", color: t.faint },
+    html: "<kbd>1</kbd>–<kbd>5</kbd> bo'lim · <kbd>D</kbd> tun/kun · <kbd>←</kbd> <kbd>→</kbd> · <kbd>Space</kbd>" }));
+  f.appendChild(el("p", { style: { fontFamily: mono, fontSize: "9.5px",
+    letterSpacing: ".1em", textTransform: "uppercase",
+    color: S.voice ? t.ok : t.red },
+    text: S.voice ? "ovoz ✓" : "ovoz yo'q" }));
+  page.appendChild(f);
+
+  root.appendChild(page);
+}
+
+/* ── KLAVIATURA ──────────────────────────────────────────────── */
+document.addEventListener("keydown", function (e) {
+  var tg = e.target.tagName;
+  if (tg === "INPUT" || tg === "TEXTAREA") return;
+  var k = e.key.toLowerCase();
+  var n = parseInt(e.key, 10);
+
+  if (n >= 1 && n <= 5) { S.tab = TABS[n - 1].id; render(); return; }
+  if (k === "d") { S.dark = !S.dark; save(); render(); return; }
+
+  if (S.tab === "abc") {
+    var L = (S.abcOnly ? ABC.filter(function (a) { return a.hard; }) : ABC);
+    if (e.key === "ArrowRight") { e.preventDefault(); S.abcI = (S.abcI + 1) % L.length; render(); speak(L[S.abcI].say, 0.8); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); S.abcI = (S.abcI - 1 + L.length) % L.length; render(); speak(L[S.abcI].say, 0.8); }
+    else if (e.key === " ") { e.preventDefault(); speak(L[S.abcI].say, 0.8); }
+    else if (k === "s") { e.preventDefault(); speak(L[S.abcI].say, 0.55); }
+  }
+  else if (S.tab === "voc") {
+    var C = DECKS[S.deck];
+    if (e.key === "ArrowRight") { e.preventDefault(); S.cardI = (S.cardI + 1) % C.length; S.flip = false; render(); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); S.cardI = (S.cardI - 1 + C.length) % C.length; S.flip = false; render(); }
+    else if (e.key === " ") { e.preventDefault(); S.flip = !S.flip; render(); }
+    else if (e.key === "Enter") { e.preventDefault(); var cc = C[S.cardI];
+      if (!S.known[cc.ru]) { S.known[cc.ru] = 1; addScore(1); save(); render(); } }
+    else if (k === "a") { e.preventDefault(); speak(C[S.cardI].ru, 0.9); }
+    else if (k === "s") { e.preventDefault(); speak(C[S.cardI].ru, 0.55); }
+  }
+  else if (S.tab === "drill") {
+    var N = S.drill === "akanye" ? AKANYE.length : PAIRS.length;
+    if (e.key === "ArrowRight") { e.preventDefault(); S.drillI = (S.drillI + 1) % N; S.drillShow = false; render(); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); S.drillI = (S.drillI - 1 + N) % N; S.drillShow = false; render(); }
+    else if (e.key === " ") { e.preventDefault();
+      if (S.drill === "akanye") { S.drillShow = !S.drillShow; render(); }
+      else { speak(PAIRS[S.drillI].a, 0.8); } }
+  }
+  else if (S.tab === "talk") {
+    var TK = OFFLINE_TALK[S.talk];
+    if (e.key === "ArrowRight") { e.preventDefault(); S.talkI = (S.talkI + 1) % TK.length; S.talkShow = false; render(); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); S.talkI = (S.talkI - 1 + TK.length) % TK.length; S.talkShow = false; render(); }
+    else if (e.key === " ") { e.preventDefault(); S.talkShow = !S.talkShow; render(); }
+    else if (k === "a") { e.preventDefault(); speak(TK[S.talkI].q, 0.9); }
+  }
+});
+
+/* Tarmoq holati o'zgarsa — ovozni qayta tanlaymiz */
+window.addEventListener("offline", function () { S.offline = true; autoPick(); save(); render(); });
+
+/* ── ISHGA TUSHIRISH ─────────────────────────────────────────── */
+savedVoiceName = load();
+render();
+initVoices();
+
+})();
+
+</script>
+</body>
+</html>
